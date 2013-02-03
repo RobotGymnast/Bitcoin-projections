@@ -63,6 +63,6 @@ income nhr inhr t = revenue nhr inhr t - cost t
 cost :: Time -> Money
 cost t = t * power * energyCost / kWhToJ
 
--- Raspberry pi
+-- Raspberry pi + ASICs
 power :: Power
 power = hashRate / efficiency + 5
