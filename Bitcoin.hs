@@ -40,28 +40,25 @@ diffPeriod :: (HashRate -> Time) -- ^ Inverse integral of network hash rate
            -> Time
 diffPeriod inv d = inv $ blocksPerPeriod * 2^32 * d
 
--- | The lenth of each difficulty period, and the revenue gained in that period
-revenuePeriods :: NHR -> INHR -> [(Time, Money)]
-revenuePeriods nhr inhr = unfoldr (Just . step) $ accum 0
+-- | The lenth of each difficulty period, and the income in that period
+incomePeriods :: NHR -> INHR -> [(Time, Money)]
+incomePeriods nhr inhr = unfoldr (Just . step) $ accum 0
     where
         accum t = (difficulty $ nhr t, t)
 
         step (d, t) = let period = diffPeriod (inhr t) d
-                      in ((period, period * revenueDeriv d), accum $ t + period)
-
-revenue :: NHR -> INHR -> Time -> Money
-revenue nhr inhr t0 = sumRevenue t0 $ revenuePeriods nhr inhr
-    where
-        sumRevenue t ((dt, m):rs) = if dt < t
-                                    then m + sumRevenue (t - dt) rs
-                                    else m * t / dt
-        sumRevenue _ _ = error "Revenue ended"
+                      in ((period, period * (revenueDeriv d - costDeriv)), accum $ t + period)
 
 income :: NHR -> INHR -> Time -> Money
-income nhr inhr t = revenue nhr inhr t - cost t
+income nhr inhr t0 = sumIncome t0 $ incomePeriods nhr inhr
+    where
+        sumIncome t ((dt, m):rs) = if dt < t
+                                   then m + sumIncome (t - dt) rs
+                                   else m * t / dt
+        sumIncome _ _ = error "income ended"
 
-cost :: Time -> Money
-cost t = t * power * energyCost / kWhToJ
+costDeriv :: Money
+costDeriv = power * energyCost / kWhToJ
 
 -- Raspberry pi + ASICs
 power :: Power
