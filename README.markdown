@@ -1,4 +1,4 @@
 You will need:
 
  * Haskell
- * Step (https://github.com/RobotGymnast/Step)
+ * Summit (https://github.com/RobotGymnast/Summit)
