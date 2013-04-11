@@ -13,10 +13,10 @@ import Storage.List
 import Bitcoin
 
 baseHashRate :: HashRate
-baseHashRate = 141e12 -- 30/01/13
+baseHashRate = 47930589482844 -- April 4/13
 
 monthHashGain :: HashRate
-monthHashGain = 3e12 * 365.24 / 12
+monthHashGain = 16e12 * 365.24 / 12
 
 secondsPerMonth :: Time
 secondsPerMonth = 3600 * 24 * 365.24 / 12

@@ -13,12 +13,12 @@ type Power = BaseType
 
 type NHR = Time -> HashRate
 -- | Inverse integral of the network hash rate
-type INHR = HashRate -> Time -> HashRate
+type INHR = Time -> HashRate -> Time
 
 -- H / J
 efficiency = 1e9
 btcPerBlock = 25
-btcToUSD = 17.64
+btcToUSD = 120
 energyCost = 0.10
 kWhToJ = 3600e3
 netTimePerBlock = 600
