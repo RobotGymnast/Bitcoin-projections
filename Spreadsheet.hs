@@ -14,6 +14,7 @@ import Prelude hiding ((.), id)
 
 import Control.DeepSeq
 import Control.Exception (assert)
+import Control.Monad.Par
 import Data.Functor
 import Data.Time.Calendar
 import qualified Data.Vector as V
@@ -191,9 +192,56 @@ main = do print $ test 1 1000000 globalBTC
           print $ test 1 1000000 marketCap
           print $ test 1 1000000 exchangeRate
 
+{-
+-- | Assumes 'Summary' is a monoid... which it isn't. Yet.
+--   Waiting on: https://github.com/patperry/hs-monte-carlo/pull/6
+--
+--   Runs a monte-carlo wire a given number of times, for a given number
+--   of simulation steps.
+doTrial :: Int            -- ^ The number of simulation steps to take.
+        -> Int            -- ^ The number of times to simulate per step.
+        -> (() ~> Double) -- ^ The wire to test.
+        -> Par (V.Vector Summary)
+doTrial steps trials w =
+    let range = InclusiveRange 0 (trials - 1)
+
+        simulation :: MC [Double]
+        simulation = do
+            -- prime the RNG, since we seed it with _very_ predictable values.
+            _ <- uniform 0 0
+            sim w steps []
+
+        perIndex :: Int -> V.Vector Summary
+        perIndex i = let rng = mt19937 i
+                      in evalMC simulation rng
+                          >>> V.fromList
+                          >>> V.map (\x -> summary [x])
+                          >>> return
+
+        reducer :: V.Vector Summary -> V.Vector Summary -> V.Vector Summary
+        reducer x y = return $ V.zipWith mappend x y
+
+        base :: V.Vector Summary
+        base = V.replicate steps mempty
+     -- Yay. The whole thing's a map-reduce job! :)
+     in parMapReduceRange range perIndex reducer base
+    where
+        -- simulate the wire for a given number of steps, returning all the
+        -- intermediate values. The result is backwards! We really need
+        -- this for tail recursion, and Vector fusion will help make this a
+        -- non-issue later.
+        --sim :: MCWire () Double -> Int -> MC [Double] <- valid, but GHC bitches.
+        sim _  0 vals = return vals
+        sim w' k vals = do
+            (val, w'') <- stepWire w' 1 ()
+            let val' = either (const []) id val
+            sim w'' (k-1) (val':vals)
+-}
+
 instance NFData Summary where
     rnf !s = ()
 
+-- | A single-threaded version of above, until my pull request is accepted.
 test :: Int -- ^ The number of simulation steps to take.
      -> Int -- ^ The number of times to simulate per step.
      -> (() ~> Double) -- ^ The wire to test.
@@ -203,20 +251,24 @@ test steps trials w =
         -- intermediate hash rates. The result is backwards! We really need
         -- this for tail recursion, and Vector fusion will help make this a
         -- non-issue later.
-        --sim :: MCWire () HashRate -> Int -> MC [HashRate] <- valid, but GHC bitches.
+        --sim :: (() ~> HashRate) -> Int -> [Double] -> MC [Double] <- valid, but GHC bitches.
         sim _  0 hrs = return hrs
         sim w' k hrs = do
-            (Right hr, w'') <- stepWire w' 1 ()
-            sim w'' (k-1) (hr:hrs)
+            (hr, w'') <- stepWire w' 1 ()
+            let hrs' =
+                case hr of
+                    Left _    -> hrs'
+                    Right hr' -> hr':hrs
+            sim w'' (k-1) hrs
 
         -- simulate the wire `k' times, returning summaries of the simulations
         -- at each time step.
         runTrial :: Int -> RNG -> V.Vector Summary -> V.Vector Summary
         runTrial 0 _ s = s
         runTrial k rng s =
-            let (hrs, rng') = runMC (sim w steps []) rng
-                vhrs = V.reverse $ V.fromList hrs
-             in runTrial (k-1) rng' $!! V.zipWith update s vhrs
+            let (vals, rng') = runMC (sim w steps []) rng
+                vvals = V.reverse $ V.fromList vals
+             in runTrial (k-1) rng' $!! V.zipWith update s vvals
 
      in runTrial trials (mt19937 0) (V.replicate steps (summary []))
 
