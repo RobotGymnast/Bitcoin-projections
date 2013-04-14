@@ -208,7 +208,7 @@ doTrial steps trials wire =
         -- back around after the map-reduce is done.
         simulation :: MC [Double]
         simulation = do
-            (_, vals) <- foldNM (wire, []) $ \(w, vals) -> do
+            (_, vals) <- foldN (wire, []) $ \(w, vals) -> do
                 (val, w') <- stepWire w 1 ()
                 let vals' = either (const vals) (:vals) val
                 return (w', vals')
@@ -235,17 +235,11 @@ doTrial steps trials wire =
 instance NFData Summary where
     rnf !_ = ()
 
--- | Run the given iterated function a certain number of times,
---   returning the result of the final iteration.
-foldN :: Int -> a -> (a -> a) -> a
-foldN 0  x _ = x
-foldN n !x f = foldN (n-1) (f x) f
-
--- | The monadic version of foldN.
-foldNM :: Monad m => Int -> a -> (a -> m a) -> m a
-foldNM 0  x _ = return x
-foldNM n !x f = do y <- f x
-                   foldNM (n-1) y f
+-- | Iterate a computation a given number of times, returning the final result.
+foldN :: Monad m => Int -> a -> (a -> m a) -> m a
+foldN 0  x _ = return x
+foldN n !x f = do y <- f x
+                  foldN (n-1) y f
 
 -- | A single-threaded version of above, until my pull request is accepted.
 test :: Int -- ^ The number of simulation steps to take.
@@ -259,7 +253,7 @@ test steps trials w =
         -- non-issue later.
         simulate :: MC [Double]
         simulate = do
-            (_, vals) <- foldNM steps (w, []) $
+            (_, vals) <- foldN steps (w, []) $
                 \(w', vals) -> do
                     (val, w'') <- stepWire w' 1 ()
                     let vals' = either (const vals) (:vals) val
@@ -271,7 +265,7 @@ test steps trials w =
         -- simulate the wire 'trials' times, returning summaries of the
         -- simulations at each time step.
      in flip evalMC (mt19937 0) $
-          foldNM trials emptySummaries $ \s -> do
+          foldN trials emptySummaries $ \s -> do
             vals <- simulate
             let vvals = V.reverse $ V.fromList vals
             return $!! V.zipWith update s vvals
