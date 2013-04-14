@@ -95,7 +95,7 @@ marketCap = deriveSimpleExponential
 --
 --   > https://github.com/patperry/hs-gsl-random/pull/4
 exchangeRate :: a ~> Double
-exchangeRate = (/) <$> marketCap <*> globalBTC
+exchangeRate = marketCap / globalBTC -- I can just do that!?
 
 -- | @see deriveExponential
 --
