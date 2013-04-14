@@ -15,10 +15,19 @@ type NHR = Time -> HashRate
 -- | Inverse integral of the network hash rate
 type INHR = Time -> HashRate -> Time
 
+type Purchase = (Money, HashRate)
+
+jalepeno, little, single, large :: Purchase
+
+jalepeno = (150, 4.5e9)
+little = (650, 30e9)
+single = (1300, 60e9)
+large = (29900, 1500e9)
+
 -- H / J
 efficiency = 1e9
 btcPerBlock = 25
-btcToUSD = 120
+btcToUSD = 139
 energyCost = 0.10
 kWhToJ = 3600e3
 netTimePerBlock = 600
@@ -55,6 +64,10 @@ income nhr inhr h t0 = sumIncome t0 $ incomePeriods nhr inhr h
                                    then m + sumIncome (t - dt) rs
                                    else m * t / dt
         sumIncome _ _ = error "income ended"
+
+-- Whenever there's enough income, make the next Purchase.
+-- Returns the time taken and resultant hash rate
+--reinvest :: NHR -> INHR -> HashRate -> [Purchase] -> (Time, HashRate)
 
 costDeriv :: HashRate -> Money
 costDeriv h = power h * energyCost / kWhToJ
