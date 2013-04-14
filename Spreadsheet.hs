@@ -3,10 +3,10 @@ module Main where
 
 -- Required modules:
 --
--- mtl
 -- deepseq
 -- time
 -- vector
+-- monad-par    - not in HP
 -- netwire      - not in HP
 -- monte-carlo  - not in HP
 
@@ -14,15 +14,12 @@ import Prelude hiding ((.), id)
 
 import Control.DeepSeq
 import Control.Exception (assert)
-import Control.Monad.Par
-import Data.Functor
+--import Control.Monad.Par
 import Data.Time.Calendar
 import qualified Data.Vector as V
 import Control.Monad.MC
-import Control.Monad.Trans
 import Control.Wire
 import Data.Summary
-import Text.Printf
 
 -- | A normal monte-carlo wire.
 --
@@ -171,19 +168,19 @@ deriveExponential fudge (y2', t2') (y1', t1') =
                             then (y2', t2', y1', t1')
                             else (y1', t1', y2', t2')
 
-        dt = fromIntegral $ t2 `diffDays` t1
+        deltat = fromIntegral $ t2 `diffDays` t1
         dlogy = log $ y2 / y1
 
-        exponent = dlogy / dt
+        exponentialFactor = dlogy / deltat
 
         initialValue :: Double
         initialValue = (y2 *) . exp $
-            exponent * (fromIntegral $ origin `diffDays` t2)
+            exponentialFactor * (fromIntegral $ origin `diffDays` t2)
 
     -- We're using euler integration here. For long prediction periods, this
     -- may be too numerically unstable. If so, consider using RK4 instead.
      in mkStateM initialValue $ \dt (x, !y) -> do
-          dy <- fudge (exponent*y) x
+          dy <- fudge (exponentialFactor*y) x
           return (Right y, y + dy*dt)
 
 -- | Let's just simulate a full year a million times and see what happens.
@@ -236,17 +233,17 @@ doTrial steps trials wire =
 -}
 
 instance NFData Summary where
-    rnf !s = ()
+    rnf !_ = ()
 
 -- | Run the given iterated function a certain number of times,
 --   returning the result of the final iteration.
 foldN :: Int -> a -> (a -> a) -> a
-foldN 0  x f = x
+foldN 0  x _ = x
 foldN n !x f = foldN (n-1) (f x) f
 
 -- | The monadic version of foldN.
 foldNM :: Monad m => Int -> a -> (a -> m a) -> m a
-foldNM 0  x f = return x
+foldNM 0  x _ = return x
 foldNM n !x f = do y <- f x
                    foldNM (n-1) y f
 
@@ -261,11 +258,13 @@ test steps trials w =
         -- this for tail recursion, and Vector fusion will help make this a
         -- non-issue later.
         simulate :: MC [Double]
-        simulate = snd <$> (foldNM steps (w, []) $
-            \(w', hrs) -> do
-                (hr, w'') <- stepWire w' 1 ()
-                let hrs' = either (const hrs) (:hrs) hr
-                return (w'', hrs'))
+        simulate = do
+            (_, vals) <- foldNM steps (w, []) $
+                \(w', vals) -> do
+                    (val, w'') <- stepWire w' 1 ()
+                    let vals' = either (const vals) (:vals) val
+                    return (w'', vals')
+            return vals
 
         emptySummaries = V.replicate steps (summary [])
 
@@ -276,58 +275,3 @@ test steps trials w =
              let (vals, rng') = runMC simulate rng
                  vvals = V.reverse $ V.fromList vals
               in (rng',) $!! V.zipWith update s vvals
-
--- | The quick and dirty form of summarize'.
-summarize :: MC Double -> IO ()
-summarize mc = summarize' mc "Quick" 1000000
-
--- | Prints out a nice summary of a random variable.
-summarize' :: MC Double -- ^ The random variable to summarize.
-           -> String    -- ^ The name of the variable.
-           -> Int       -- ^ The number of data points requested.
-           -> IO ()
-summarize' mc name tries = summarizeR (mt19937 0) mc name tries >> pure ()
-
-summarizeR :: RNG -> MC Double -> String -> Int -> IO RNG
-summarizeR rng mc name tries = do
-    let (rng', trials) = runTrials tries rng
-        sumry = summary trials
-
-        samples = sampleSize sumry
-        min     = sampleMin sumry
-        max     = sampleMax sumry
-        mean    = sampleMean sumry
-        se      = sampleSE sumry
-        var     = sampleVar sumry
-        sd      = sampleSD sumry
-        ci80    = sampleCI 0.80 sumry
-        ci95    = sampleCI 0.95 sumry
-        ci999   = sampleCI 0.999 sumry
-    
-    printf "Summary - %s\n" name
-    printf "-----------------------------\n"
-    printf "Samples:            %d\n" samples
-    printf "Min:                %.4g\n" min
-    printf "Max:                %.4g\n" max
-    printf "Mean:               %.4g\n" mean
-    printf "Standard Error:     %.4g\n" se
-    printf "Variance:           %.4g\n" var
-    printf "Standard Deviation: %.4g\n" sd
-    printCI "80% CI" ci80
-    printCI "95% CI" ci95
-    printCI "99.9% CI" ci999
-
-    return rng'
-
-    where
-        runTrials :: Int -> RNG -> (RNG, [Double])
-        runTrials 0 rng = (rng, [])
-        runTrials k rng = let (t, rng') = runMC mc rng
-                              (rng'', ts) = runTrials (k-1) rng'
-                           in (rng'', t:ts)
-
-        printCI :: String -> (Double, Double) -> IO ()
-        printCI name (low, high) = do
-            printf "%s:\n" name
-            printf "  Low: %.4g\n" low
-            printf "  High: %.4g\n" high
