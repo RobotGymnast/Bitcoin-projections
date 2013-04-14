@@ -1,4 +1,4 @@
-{-# LANGUAGE RankNTypes, BangPatterns, TypeOperators #-}
+{-# LANGUAGE RankNTypes, BangPatterns, TypeOperators, TupleSections #-}
 module Main where
 
 -- Required modules:
@@ -202,44 +202,53 @@ doTrial :: Int            -- ^ The number of simulation steps to take.
         -> Int            -- ^ The number of times to simulate per step.
         -> (() ~> Double) -- ^ The wire to test.
         -> Par (V.Vector Summary)
-doTrial steps trials w =
+doTrial steps trials wire =
     let range = InclusiveRange 0 (trials - 1)
 
+        -- simulate the wire for a given number of steps, returning all the
+        -- intermediate values. The result is going to be backwards so we get
+        -- nice tail recursion, but this isn't really a problem. We flip it
+        -- back around after the map-reduce is done.
         simulation :: MC [Double]
         simulation = do
-            -- prime the RNG, since we seed it with _very_ predictable values.
-            _ <- uniform 0 0
-            sim w steps []
+            (_, vals) <- foldNM (wire, []) $ \(w, vals) -> do
+                (val, w') <- stepWire w 1 ()
+                let vals' = either (const vals) (:vals) val
+                return (w', vals')
+            return vals
 
-        perIndex :: Int -> V.Vector Summary
-        perIndex i = let rng = mt19937 i
-                      in evalMC simulation rng
-                          >>> V.fromList
-                          >>> V.map (\x -> summary [x])
-                          >>> return
+        perIndex :: Int -> Par (V.Vector Summary)
+        perIndex i =
+            let rng = mt19937 i
+             in evalMC simulation rng
+                  >>> V.fromList
+                  >>> V.map (\x -> summary [x])
+                  >>> return
 
-        reducer :: V.Vector Summary -> V.Vector Summary -> V.Vector Summary
+        reducer :: V.Vector Summary -> V.Vector Summary -> Par (V.Vector Summary)
         reducer x y = return $ V.zipWith mappend x y
 
         base :: V.Vector Summary
         base = V.replicate steps mempty
+
      -- Yay. The whole thing's a map-reduce job! :)
-     in parMapReduceRange range perIndex reducer base
-    where
-        -- simulate the wire for a given number of steps, returning all the
-        -- intermediate values. The result is backwards! We really need
-        -- this for tail recursion, and Vector fusion will help make this a
-        -- non-issue later.
-        --sim :: MCWire () Double -> Int -> MC [Double] <- valid, but GHC bitches.
-        sim _  0 vals = return vals
-        sim w' k vals = do
-            (val, w'') <- stepWire w' 1 ()
-            let val' = either (const []) id val
-            sim w'' (k-1) (val':vals)
+     in V.reverse <$> parMapReduceRange range perIndex reducer base
 -}
 
 instance NFData Summary where
     rnf !s = ()
+
+-- | Run the given iterated function a certain number of times,
+--   returning the result of the final iteration.
+foldN :: Int -> a -> (a -> a) -> a
+foldN 0  x f = x
+foldN n !x f = foldN (n-1) (f x) f
+
+-- | The monadic version of foldN.
+foldNM :: Monad m => Int -> a -> (a -> m a) -> m a
+foldNM 0  x f = return x
+foldNM n !x f = do y <- f x
+                   foldNM (n-1) y f
 
 -- | A single-threaded version of above, until my pull request is accepted.
 test :: Int -- ^ The number of simulation steps to take.
@@ -251,26 +260,22 @@ test steps trials w =
         -- intermediate hash rates. The result is backwards! We really need
         -- this for tail recursion, and Vector fusion will help make this a
         -- non-issue later.
-        --sim :: (() ~> HashRate) -> Int -> [Double] -> MC [Double] <- valid, but GHC bitches.
-        sim _  0 hrs = return hrs
-        sim w' k hrs = do
-            (hr, w'') <- stepWire w' 1 ()
-            let hrs' =
-                case hr of
-                    Left _    -> hrs'
-                    Right hr' -> hr':hrs
-            sim w'' (k-1) hrs
+        simulate :: MC [Double]
+        simulate = snd <$> (foldNM steps (w, []) $
+            \(w', hrs) -> do
+                (hr, w'') <- stepWire w' 1 ()
+                let hrs' = either (const hrs) (:hrs) hr
+                return (w'', hrs'))
 
-        -- simulate the wire `k' times, returning summaries of the simulations
-        -- at each time step.
-        runTrial :: Int -> RNG -> V.Vector Summary -> V.Vector Summary
-        runTrial 0 _ s = s
-        runTrial k rng s =
-            let (vals, rng') = runMC (sim w steps []) rng
-                vvals = V.reverse $ V.fromList vals
-             in runTrial (k-1) rng' $!! V.zipWith update s vvals
+        emptySummaries = V.replicate steps (summary [])
 
-     in runTrial trials (mt19937 0) (V.replicate steps (summary []))
+        -- simulate the wire 'trials' times, returning summaries of the
+        -- simulations at each time step.
+     in snd . foldN trials (mt19937 0, emptySummaries) $
+          \(rng, s) ->
+             let (vals, rng') = runMC simulate rng
+                 vvals = V.reverse $ V.fromList vals
+              in (rng',) $!! V.zipWith update s vvals
 
 -- | The quick and dirty form of summarize'.
 summarize :: MC Double -> IO ()
