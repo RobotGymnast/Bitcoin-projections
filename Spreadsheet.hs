@@ -185,9 +185,7 @@ deriveExponential fudge (y2', t2') (y1', t1') =
 
 -- | Let's just simulate a full year a million times and see what happens.
 main :: IO ()
-main = do print $ test 1 1000000 globalBTC
-          print $ test 1 1000000 marketCap
-          print $ test 1 1000000 exchangeRate
+main = do print $ test (365) 1000000 exchangeRate
 
 {-
 -- | Assumes 'Summary' is a monoid... which it isn't. Yet.
