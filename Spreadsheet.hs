@@ -54,8 +54,8 @@ origin = fromGregorian 2013 4 12
 globalHashRate :: a ~> Double
 globalHashRate = averageHashRate >>>
     deriveExponential
-        (\hashRate userHashRate -> do
-            newUsers <- poisson $ hashRate / userHashRate
+        (\dHashRate userHashRate -> do
+            newUsers <- poisson $ dHashRate / userHashRate
             return $ (fromIntegral newUsers) * userHashRate)
         -- values retried April 12, 2013
         (60e12, fromGregorian 2013 4 13)
@@ -115,11 +115,11 @@ deriveSimpleExponential =
 --
 --   To predict such a quantity, we need two things:
 --
---     1) A function 'f' which, when given the current value of the quantity
---        and the input to this wire, produces a "fudged" value. i.e., one
---        that's the result of a random process.
+--     1) A function 'f' which, when given the current estimate for the change
+--        in the current time step and the input to this wire, produces a
+--        "fudged" value. i.e., one that's the result of a random process.
 --
---        This function runs in the Monte-Carlo monad.
+--        'f' runs in the Monte-Carlo monad.
 --
 --        If you don't need this feature, use 'deriveSimpleExponential' instead.
 --
@@ -182,8 +182,8 @@ deriveExponential fudge (y2', t2') (y1', t1') =
     -- We're using euler integration here. For long prediction periods, this
     -- may be too numerically unstable. If so, consider using RK4 instead.
      in mkStateM initialValue $ \dt (x, !y) -> do
-          dy <- (exponent *) <$> fudge y x
-          return (Right y, y + dy*dt)
+          dy <- fudge (exponent*y*dt) x
+          return (Right y, y + dy)
 
 -- | Let's just simulate a full year a million times and see what happens.
 main :: IO ()
