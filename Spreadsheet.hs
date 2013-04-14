@@ -117,8 +117,8 @@ deriveSimpleExponential =
 --   To predict such a quantity, we need two things:
 --
 --     1) A function 'f' which, when given the current estimate for the change
---        in the current time step and the input to this wire, produces a
---        "fudged" value. i.e., one that's the result of a random process.
+--        in the current day and the input to this wire, produces a "fudged"
+--        value. i.e., a current estimate that's the result of a random process.
 --
 --        'f' runs in the Monte-Carlo monad.
 --
@@ -183,8 +183,8 @@ deriveExponential fudge (y2', t2') (y1', t1') =
     -- We're using euler integration here. For long prediction periods, this
     -- may be too numerically unstable. If so, consider using RK4 instead.
      in mkStateM initialValue $ \dt (x, !y) -> do
-          dy <- fudge (exponent*y*dt) x
-          return (Right y, y + dy)
+          dy <- fudge (exponent*y) x
+          return (Right y, y + dy*dt)
 
 -- | Let's just simulate a full year a million times and see what happens.
 main :: IO ()
