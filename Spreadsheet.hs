@@ -270,8 +270,8 @@ test steps trials w =
 
         -- simulate the wire 'trials' times, returning summaries of the
         -- simulations at each time step.
-     in snd . foldN trials (mt19937 0, emptySummaries) $
-          \(rng, s) ->
-             let (vals, rng') = runMC simulate rng
-                 vvals = V.reverse $ V.fromList vals
-              in (rng',) $!! V.zipWith update s vvals
+     in flip evalMC (mt19937 0) $
+          foldNM trials emptySummaries $ \s -> do
+            vals <- simulate
+            let vvals = V.reverse $ V.fromList vals
+            return $!! V.zipWith update s vvals
