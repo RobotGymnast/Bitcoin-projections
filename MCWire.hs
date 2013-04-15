@@ -12,11 +12,11 @@ module MCWire ( module Control.Monad.MC
 
 import Prelude hiding ((.), id)
 
-import Control.DeepSeq
 import Control.Monad.MC hiding ( sample )
--- import Control.Monad.Par
+import Control.Monad.Par
 import Control.Wire
 
+import Data.Monoid
 import Data.Summary
 import Data.Time.Calendar
 import qualified Data.Vector as V
@@ -122,7 +122,6 @@ deriveExponential fudge (y2', t2') (y1', t1') origin =
           dy <- fudge (exponentialFactor*y) x
           return (Right y, y + dy*dt)
 
-{-
 -- | Assumes 'Summary' is a monoid... which it isn't. Yet.
 --   Waiting on: https://github.com/patperry/hs-monte-carlo/pull/6
 --
@@ -141,7 +140,7 @@ simulate steps trials wire =
         -- back around after the map-reduce is done.
         simulation :: MC [Double]
         simulation = do
-            (_, vals) <- foldN (wire, []) $ \(w, vals) -> do
+            (_, vals) <- foldN steps (wire, []) $ \(w, vals) -> do
                 (val, w') <- stepWire w 1 ()
                 let vals' = either (const vals) (:vals) val
                 return (w', vals')
@@ -149,11 +148,10 @@ simulate steps trials wire =
 
         perIndex :: Int -> Par (V.Vector Summary)
         perIndex i =
-            let rng = mt19937 i
-             in evalMC simulation rng
-                  >>> V.fromList
-                  >>> V.map (\x -> summary [x])
-                  >>> return
+            let rng = mt19937 (fromIntegral i)
+                evaled = V.fromList $ evalMC simulation rng
+                summs = V.map (\x -> summary [x]) evaled
+             in return summs
 
         reducer :: V.Vector Summary -> V.Vector Summary -> Par (V.Vector Summary)
         reducer x y = return $ V.zipWith mappend x y
@@ -163,39 +161,9 @@ simulate steps trials wire =
 
      -- Yay. The whole thing's a map-reduce job! :)
      in V.reverse <$> parMapReduceRange range perIndex reducer base
--}
 
 -- | Iterate a computation a given number of times, returning the final result.
 foldN :: Monad m => Int -> a -> (a -> m a) -> m a
 foldN 0  x _ = return x
 foldN n !x f = do y <- f x
                   foldN (n-1) y f
-
--- | A single-threaded version of above, until my pull request is accepted.
-simulate :: Int -- ^ The number of simulation steps to take.
-         -> Int -- ^ The number of times to simulate per step.
-         -> (() ~> Double) -- ^ The wire to test.
-         -> V.Vector Summary
-simulate steps trials w =
-    let -- simulate the wire for a given number of steps, returning all the
-        -- intermediate hash rates. The result is backwards! We really need
-        -- this for tail recursion, and Vector fusion will help make this a
-        -- non-issue later.
-        runOnce :: MC [Double]
-        runOnce = do
-            (_, vals) <- foldN steps (w, []) $
-                \(w', vals) -> do
-                    (val, w'') <- stepWire w' 1 ()
-                    let vals' = either (const vals) (:vals) val
-                    return (w'', vals')
-            return vals
-
-        emptySummaries = V.replicate steps (summary [])
-
-        -- simulate the wire 'trials' times, returning summaries of the
-        -- simulations at each time step.
-     in flip evalMC (mt19937 0) $
-          foldN trials emptySummaries $ \s -> do
-            vals <- runOnce
-            let vvals = V.reverse $ V.fromList vals
-            return $!! V.zipWith update s vvals
