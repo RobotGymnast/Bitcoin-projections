@@ -1,4 +1,6 @@
 You will need:
 
  * Haskell
- * Summit (https://github.com/RobotGymnast/Summit)
+ * Clark's branch of...
+    * https://github.com/wowus/hs-monte-carlo
+    * https://github.com/wowus/hs-gsl-random
