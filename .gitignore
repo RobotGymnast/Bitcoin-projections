@@ -2,6 +2,6 @@
 *~
 *.ignore
 *.ignore.*
-
+cabal-dev/
 dist
 docs
