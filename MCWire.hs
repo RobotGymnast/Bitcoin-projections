@@ -12,6 +12,7 @@ module MCWire ( module Control.Monad.MC
 
 import Prelude hiding ((.), id)
 
+import Control.DeepSeq
 import Control.Monad.MC hiding ( sample )
 import Control.Monad.Par
 import Control.Wire
@@ -151,10 +152,10 @@ simulate steps trials wire =
             let rng = mt19937 (fromIntegral i)
                 evaled = V.fromList $ evalMC simulation rng
                 summs = V.map (\x -> summary [x]) evaled
-             in return summs
+             in return $!! summs
 
         reducer :: V.Vector Summary -> V.Vector Summary -> Par (V.Vector Summary)
-        reducer x y = return $ V.zipWith mappend x y
+        reducer x y = return $!! V.zipWith mappend x y
 
         base :: V.Vector Summary
         base = V.replicate steps mempty
